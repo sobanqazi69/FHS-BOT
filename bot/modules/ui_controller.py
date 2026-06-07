@@ -657,7 +657,7 @@ def press_enter_low_memory(timeout: int = 120):
                 logger.info("Pressed Escape.")
                 logger.info("Waiting 2 minutes before pressing 8...")
                 time.sleep(120)
-                pyautogui.press("8")
+                pyautogui.hotkey("ctrl", "8")
                 logger.info("Pressed 8.")
                 return
             break
