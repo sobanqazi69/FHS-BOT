@@ -2,7 +2,7 @@ import logging
 from config.settings import Settings
 from bot.modules.email_reader import EmailReader
 from bot.modules.app_launcher import open_xbox
-from bot.modules.ui_controller import signout_xbox_account, click_xbox_signin, select_account, dismiss_account_popup, click_lets_go, click_forza, click_play, click_ignore, spam_enter_after_altenter, press_enter_low_memory, press_escape_then_9, wait_then_close_forza, close_xbox
+from bot.modules.ui_controller import signout_xbox_account, click_xbox_signin, select_account, close_signin_popups, dismiss_account_popup, click_lets_go, click_forza, click_play, click_ignore, spam_enter_after_altenter, press_enter_low_memory, press_escape_then_9, wait_then_close_forza, close_xbox
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,22 @@ class Bot:
                 signout_xbox_account(wait_seconds=10)
             first = False
             click_xbox_signin(wait_seconds=10)
-            select_account(email)
+            selected = select_account(email)
+            if not selected:
+                logger.warning(f"Account selection failed for {email} — closing all windows and retrying once...")
+                close_signin_popups()
+                close_xbox()
+                time.sleep(5)
+                open_xbox()
+                signout_xbox_account(wait_seconds=10)
+                click_xbox_signin(wait_seconds=10)
+                selected = select_account(email)
+                if not selected:
+                    logger.error(f"Account selection failed again for {email} after retry — skipping.")
+                    close_signin_popups()
+                    close_xbox()
+                    time.sleep(5)
+                    continue
             dismiss_account_popup(timeout=15)
             signed_in = click_lets_go(timeout=60)
             if not signed_in:

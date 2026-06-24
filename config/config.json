@@ -2,5 +2,6 @@
   "spreadsheet_id": "1tOFIP07z5m9eT9oeg7EirqR38cV7jd6-fMpaZhI46WA",
   "sheet_name": "Sheet1",
   "email_column": 1,
-  "credentials_file": "config/credentials.json"
+  "credentials_file": "config/credentials.json",
+  "screenshot_folder_id": ""
 }

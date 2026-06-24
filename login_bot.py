@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/drive.file",
 ]
 
 
@@ -231,6 +231,107 @@ def _try_personalized_ads() -> bool:
     return True
 
 
+def _capture_xbox_screenshot():
+    """Return a BytesIO PNG of the main Xbox window, or None on failure."""
+    import io, win32gui
+
+    hwnd = None
+
+    def _find(h, _):
+        nonlocal hwnd
+        if not win32gui.IsWindowVisible(h):
+            return
+        title = win32gui.GetWindowText(h)
+        if "xbox" in title.lower():
+            r = win32gui.GetWindowRect(h)
+            w, ht = r[2] - r[0], r[3] - r[1]
+            if w > 400 and ht > 400:  # main app only, not small popups
+                hwnd = h
+
+    win32gui.EnumWindows(_find, None)
+    if hwnd is None:
+        logger.warning("Xbox window not found for screenshot.")
+        return None
+
+    r = win32gui.GetWindowRect(hwnd)
+    x, y, w, h = r[0], r[1], r[2] - r[0], r[3] - r[1]
+    img = pyautogui.screenshot(region=(x, y, w, h))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf
+
+
+def _upload_to_catbox(buf) -> str:
+    """Upload PNG bytes to catbox.moe (anonymous, permanent) and return a public URL or None."""
+    try:
+        import requests as req
+        buf.seek(0)
+        resp = req.post(
+            "https://catbox.moe/user/api.php",
+            data={"reqtype": "fileupload", "userhash": ""},
+            files={"fileToUpload": ("screenshot.png", buf, "image/png")},
+            timeout=30,
+        )
+        url = resp.text.strip()
+        if url.startswith("https://"):
+            logger.info(f"Screenshot uploaded: {url}")
+            return url
+        logger.error(f"Unexpected catbox response: {url}")
+    except Exception as e:
+        logger.error(f"Screenshot upload failed: {e}")
+    return None
+
+
+def add_screenshot_to_sheet(sheet, row_number: int, credentials_file: str, email: str, folder_id: str = ""):
+    buf = _capture_xbox_screenshot()
+    if buf is None:
+        return
+
+    url = _upload_to_catbox(buf)
+
+    if url is None:
+        # Fallback — save locally
+        os.makedirs("screenshots", exist_ok=True)
+        path = os.path.abspath(f"screenshots/xbox_{row_number}_{email}.png")
+        buf.seek(0)
+        with open(path, "wb") as fh:
+            fh.write(buf.read())
+        logger.warning(f"Upload failed — screenshot saved locally: {path}")
+        return
+
+    try:
+        sheet.update(f"C{row_number}", [[f'=IMAGE("{url}")']], value_input_option="USER_ENTERED")
+        logger.info(f"Screenshot added to sheet row {row_number} column C.")
+    except Exception as e:
+        logger.error(f"Failed to write screenshot to sheet: {e}")
+
+
+def _close_xbox_popups():
+    """Close any small Xbox popup windows (Welcome back / Let's go screens) leaving the main app open."""
+    import win32gui, win32con
+
+    hwnds = []
+
+    def _find(hwnd, _):
+        if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd) == "Xbox":
+            hwnds.append(hwnd)
+
+    win32gui.EnumWindows(_find, None)
+    if len(hwnds) <= 1:
+        return
+
+    # Keep the largest window (main app), close all smaller ones
+    def _area(hwnd):
+        r = win32gui.GetWindowRect(hwnd)
+        return (r[2] - r[0]) * (r[3] - r[1])
+
+    hwnds.sort(key=_area, reverse=True)
+    for hwnd in hwnds[1:]:
+        win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+        logger.info("Closed extra Xbox popup window (Welcome back / Let's go).")
+
+
 def _check_oops() -> bool:
     for _, txt in _all_texts():
         lower = txt.lower()
@@ -376,6 +477,10 @@ def _do_credentials_flow(email: str, password: str, is_retry: bool = False):
     time.sleep(5)
     _handle_post_login_pages(email, password, is_retry=is_retry)
 
+    # Catch pages that appear a few seconds after the loop declares done
+    time.sleep(3)
+    _try_diagnostic_data()
+
 
 def sign_in_with_credentials(email: str, password: str):
     logger.info("Waiting 5s for account picker...")
@@ -401,12 +506,15 @@ async def run():
         logger.info(f"Processing: {email}")
 
         open_xbox()
+        _close_xbox_popups()    # close any leftover Xbox popup (Welcome back, Let's go, etc.)
+        _try_diagnostic_data()  # close any leftover diagnostic data popup
         signout_xbox_account(wait_seconds=10)
         click_xbox_signin(wait_seconds=10)
         sign_in_with_credentials(email, password)
 
-        # Mark blue in sheet before signing out
+        # Mark blue and capture screenshot before signing out
         mark_account_blue(sheet, row_num)
+        add_screenshot_to_sheet(sheet, row_num, settings.get("credentials_file", "config/credentials.json"), email, settings.get("screenshot_folder_id", ""))
 
         logger.info("Waiting 3s before signing out...")
         time.sleep(3)
@@ -415,6 +523,12 @@ async def run():
         logger.info(f"Done with {email}. Moving to next account...")
 
     logger.info("All accounts processed.")
+
+    logger.info("Starting main.py...")
+    main_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "main.py"))
+    import subprocess
+    result = subprocess.run([sys.executable, main_path])
+    sys.exit(result.returncode)
 
 
 if __name__ == "__main__":

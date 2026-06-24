@@ -83,25 +83,75 @@ def click_xbox_signin(wait_seconds: int = 5):
 
     try:
         desktop = Desktop(backend="uia")
-        xbox_win = desktop.window(title_re=".*Xbox.*")
-        xbox_win.wait("visible", timeout=15)
+        candidates = desktop.windows(title_re=".*Xbox.*", top_level_only=True)
+        # Pick the largest window — that's the main Xbox app, not any popup
+        xbox_win = None
+        max_area = 0
+        for c in candidates:
+            try:
+                r = c.rectangle()
+                area = (r.right - r.left) * (r.bottom - r.top)
+                if area > max_area:
+                    max_area = area
+                    xbox_win = c
+            except Exception:
+                continue
+        if xbox_win is None:
+            raise Exception("No Xbox window found")
         logger.info("Xbox window found.")
 
-        signin_btn = xbox_win.child_window(title="Sign in", control_type="Button")
+        signin_btn = None
+        for ctrl in xbox_win.descendants(control_type="Button"):
+            try:
+                if ctrl.window_text().strip().lower() == "sign in":
+                    signin_btn = ctrl
+                    break
+            except Exception:
+                continue
+        if signin_btn is None:
+            raise Exception("'Sign in' button not found in Xbox window")
         signin_btn.click_input()
         logger.info("Clicked 'Sign in' button.")
     except Exception as e:
         logger.error(f"Failed to click Sign in button: {e}")
 
 
-def select_account(email: str, wait_seconds: int = 3):
+def close_signin_popups():
+    """Close any open 'Sign in' popup windows left over from a failed attempt."""
+    import win32gui, win32con
+
+    hwnds = []
+
+    def _find(hwnd, _):
+        if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd) == "Sign in":
+            hwnds.append(hwnd)
+
+    win32gui.EnumWindows(_find, None)
+    for hwnd in hwnds:
+        win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+        logger.info("Closed stale 'Sign in' popup window.")
+
+
+def select_account(email: str, wait_seconds: int = 3) -> bool:
     logger.info(f"Searching for account: {email}")
     time.sleep(wait_seconds)
 
     try:
         desktop = Desktop(backend="uia")
-        win = desktop.window(title="Sign in")
-        win.wait("visible", timeout=10)
+        # Multiple "Sign in" windows may exist in the UIA tree (stale entries from
+        # previous iterations). Find the one that is actually visible on screen.
+        candidates = desktop.windows(title="Sign in", top_level_only=True)
+        win = None
+        for c in candidates:
+            try:
+                if c.is_visible() and c.rectangle().width() > 0:
+                    win = c
+                    break
+            except Exception:
+                continue
+        if win is None:
+            logger.error("No visible 'Sign in' window found among candidates.")
+            return False
         win.set_focus()
         logger.info("Account picker opened.")
 
@@ -119,7 +169,7 @@ def select_account(email: str, wait_seconds: int = 3):
 
         if target_index == -1:
             logger.error(f"Account '{email}' not found in picker.")
-            return
+            return False
 
         # Focus the list control and go to top
         try:
@@ -151,8 +201,11 @@ def select_account(email: str, wait_seconds: int = 3):
             win.type_keys("{ENTER}")
             logger.info("Pressed Enter (Continue not found).")
 
+        return True
+
     except Exception as e:
         logger.error(f"Failed to select account: {e}")
+        return False
 
 
 def dismiss_account_popup(timeout: int = 15):

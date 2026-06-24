@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command' | grep -q 'login_bot\\.py' && python \"C:/Users/pc/Desktop/FHS Bot/main.py\" || true",
+            "shell": "bash",
+            "statusMessage": "Checking if login_bot.py finished..."
+          }
+        ]
+      }
+    ]
+  }
+}
