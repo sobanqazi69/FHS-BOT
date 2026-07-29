@@ -50,6 +50,16 @@ def mark_account_blue(sheet, row_number: int):
         logger.error(f"Failed to mark row blue: {e}")
 
 
+def mark_account_red(sheet, row_number: int):
+    try:
+        sheet.format(f"A{row_number}", {
+            "backgroundColor": {"red": 0.85, "green": 0.11, "blue": 0.11}
+        })
+        logger.info(f"Marked row {row_number} red in sheet.")
+    except Exception as e:
+        logger.error(f"Failed to mark row red: {e}")
+
+
 def _all_texts():
     """Collect (ctrl, text) pairs from all visible windows."""
     pairs = []
@@ -301,7 +311,7 @@ def add_screenshot_to_sheet(sheet, row_number: int, credentials_file: str, email
         return
 
     try:
-        sheet.update(f"C{row_number}", [[f'=IMAGE("{url}")']], value_input_option="USER_ENTERED")
+        sheet.update([[f'=IMAGE("{url}")']], f"C{row_number}", value_input_option="USER_ENTERED")
         logger.info(f"Screenshot added to sheet row {row_number} column C.")
     except Exception as e:
         logger.error(f"Failed to write screenshot to sheet: {e}")
@@ -332,6 +342,14 @@ def _close_xbox_popups():
         logger.info("Closed extra Xbox popup window (Welcome back / Let's go).")
 
 
+def _check_protect_account() -> bool:
+    """Return True only when 'protect your account' is visible with no skip option."""
+    texts = [txt.lower() for _, txt in _all_texts()]
+    has_protect = any("protect your account" in t for t in texts)
+    has_skip    = any("skip" in t for t in texts)
+    return has_protect and not has_skip
+
+
 def _check_oops() -> bool:
     for _, txt in _all_texts():
         lower = txt.lower()
@@ -342,21 +360,26 @@ def _check_oops() -> bool:
 
 # ── Main post-login loop ───────────────────────────────────────────────────────
 
-def _handle_post_login_pages(email: str, password: str, is_retry: bool = False):
+def _handle_post_login_pages(email: str, password: str, is_retry: bool = False) -> bool:
     """
     Loop and handle whichever post-login page is currently visible.
-    Pages can appear in any order; some may not appear at all.
-    Exits after 4 consecutive checks with no recognisable page.
+    Returns False if an unresolvable page (e.g. 'Protect your account') is detected.
+    Returns True on normal completion.
     """
-    max_wait   = 120   # total seconds before giving up
-    interval   = 2     # seconds between checks
-    idle_max   = 4     # consecutive empty checks before declaring done
+    max_wait   = 120
+    interval   = 2
+    idle_max   = 4
     idle_count = 0
     deadline   = time.time() + max_wait
 
     logger.info("[post-login] Entering page-handling loop...")
 
     while time.time() < deadline:
+        # Unresolvable: 'Let's protect your account' with no skip
+        if _check_protect_account():
+            logger.warning("[post-login] 'Protect your account' page detected — cannot skip.")
+            return False
+
         # Oops check (only on first attempt to avoid infinite recursion)
         if not is_retry and _check_oops():
             logger.warning("[post-login] 'Oops' page detected — Alt+F4 and retrying...")
@@ -366,7 +389,7 @@ def _handle_post_login_pages(email: str, password: str, is_retry: bool = False):
             time.sleep(2)
             logger.info(f"[post-login] Retrying credentials for {email}...")
             _do_credentials_flow(email, password)
-            return
+            return True
 
         handled = (
             _try_skip_for_now()
@@ -386,16 +409,17 @@ def _handle_post_login_pages(email: str, password: str, is_retry: bool = False):
             logger.info(f"[post-login] No page found ({idle_count}/{idle_max})...")
             if idle_count >= idle_max:
                 logger.info("[post-login] All post-login pages handled.")
-                return
+                return True
             time.sleep(interval)
 
     logger.warning("[post-login] Timed out waiting for post-login pages.")
+    return True
 
 
 # ── Credentials flow (shared by main + retry) ─────────────────────────────────
 
-def _do_credentials_flow(email: str, password: str, is_retry: bool = False):
-    """Scroll account picker → pick Microsoft account → enter email/password."""
+def _do_credentials_flow(email: str, password: str, is_retry: bool = False) -> bool:
+    """Scroll account picker → pick Microsoft account → enter email/password. Returns False if account must be skipped."""
     try:
         win = Desktop(backend="uia").window(title="Sign in")
         win.wait("visible", timeout=15)
@@ -403,7 +427,7 @@ def _do_credentials_flow(email: str, password: str, is_retry: bool = False):
         logger.info("Account picker opened.")
     except Exception as e:
         logger.error(f"Account picker not found: {e}")
-        return
+        return True  # picker missing isn't the protect-account case
 
     # Scroll to very bottom
     try:
@@ -475,17 +499,23 @@ def _do_credentials_flow(email: str, password: str, is_retry: bool = False):
     # Post-login pages — dynamic loop
     logger.info("Waiting 5s before checking post-login pages...")
     time.sleep(5)
-    _handle_post_login_pages(email, password, is_retry=is_retry)
+    ok = _handle_post_login_pages(email, password, is_retry=is_retry)
+    if not ok:
+        return False
 
     # Catch pages that appear a few seconds after the loop declares done
     time.sleep(3)
+    if _check_protect_account():
+        logger.warning("[post-login] Late 'Protect your account' page detected.")
+        return False
     _try_diagnostic_data()
+    return True
 
 
-def sign_in_with_credentials(email: str, password: str):
+def sign_in_with_credentials(email: str, password: str) -> bool:
     logger.info("Waiting 5s for account picker...")
     time.sleep(5)
-    _do_credentials_flow(email, password, is_retry=False)
+    return _do_credentials_flow(email, password, is_retry=False)
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
@@ -510,7 +540,15 @@ async def run():
         _try_diagnostic_data()  # close any leftover diagnostic data popup
         signout_xbox_account(wait_seconds=10)
         click_xbox_signin(wait_seconds=10)
-        sign_in_with_credentials(email, password)
+        ok = sign_in_with_credentials(email, password)
+
+        if not ok:
+            logger.warning(f"Unresolvable page for {email} — screenshotting, marking red, skipping.")
+            add_screenshot_to_sheet(sheet, row_num, settings.get("credentials_file", "config/credentials.json"), email, settings.get("screenshot_folder_id", ""))
+            mark_account_red(sheet, row_num)
+            close_xbox()
+            time.sleep(5)
+            continue
 
         # Mark blue and capture screenshot before signing out
         mark_account_blue(sheet, row_num)
