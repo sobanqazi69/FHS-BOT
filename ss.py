@@ -396,27 +396,87 @@ def run_crypto_tool_steps():
 
     # Step: Click "Yes" on Confirm save swap popup
     logger.info("Handling 'Confirm save swap' popup...")
+    time.sleep(2)
     yes_clicked = False
+
+    popup_hwnds = []
+    def _find_popup(hwnd, _):
+        try:
+            if win32gui.IsWindowVisible(hwnd):
+                title = win32gui.GetWindowText(hwnd).lower()
+                if "confirm" in title or "swap" in title:
+                    popup_hwnds.append(hwnd)
+        except Exception:
+            pass
+
     try:
-        desktop = _Desktop(backend="uia")
-        for win in desktop.windows():
-            try:
-                t = win.window_text().strip().lower()
-                if "confirm" in t or "swap" in t:
-                    for ctrl in win.descendants():
-                        if ctrl.window_text().strip().lower() == "yes":
-                            ctrl.click_input()
-                            logger.info("Clicked 'Yes' on popup via UIA.")
-                            yes_clicked = True
-                            break
-            except Exception:
-                continue
-            if yes_clicked:
-                break
+        win32gui.EnumWindows(_find_popup, None)
     except Exception:
         pass
 
-    if not yes_clicked:
+    if popup_hwnds:
+        hwnd = popup_hwnds[0]
+        logger.info(f"Found 'Confirm save swap' popup window handle: {hwnd}")
+        try:
+            from bot.modules.ui_controller import _force_foreground
+            _force_foreground(hwnd)
+        except Exception:
+            try:
+                win32gui.SetForegroundWindow(hwnd)
+            except Exception:
+                pass
+        time.sleep(0.5)
+
+        # 1. Try UIA click
+        try:
+            dlg = _Desktop(backend="uia").window(handle=hwnd)
+            for ctrl in dlg.descendants():
+                try:
+                    if ctrl.window_text().strip().lower() == "yes":
+                        ctrl.click_input()
+                        logger.info("Clicked 'Yes' via UIA.")
+                        yes_clicked = True
+                        break
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        # 2. Click coordinates of Yes button
+        try:
+            r = win32gui.GetWindowRect(hwnd)
+            yes_x = r[0] + int((r[2] - r[0]) * 0.57)
+            yes_y = r[1] + int((r[3] - r[1]) * 0.82)
+            pyautogui.click(yes_x, yes_y)
+            logger.info(f"Clicked 'Yes' button via coordinates ({yes_x}, {yes_y}).")
+            yes_clicked = True
+        except Exception:
+            pass
+
+        time.sleep(0.3)
+        pyautogui.press("enter")
+        logger.info("Pressed Enter on popup dialog.")
+    else:
+        # Search all windows for Yes button
+        try:
+            desktop = _Desktop(backend="uia")
+            for win in desktop.windows():
+                try:
+                    t = win.window_text().strip().lower()
+                    if "confirm" in t or "swap" in t:
+                        for ctrl in win.descendants():
+                            if ctrl.window_text().strip().lower() == "yes":
+                                ctrl.click_input()
+                                logger.info("Clicked 'Yes' on popup via UIA search.")
+                                yes_clicked = True
+                                break
+                except Exception:
+                    continue
+                if yes_clicked:
+                    break
+        except Exception:
+            pass
+
         pyautogui.press("enter")
         logger.info("Pressed Enter fallback for 'Yes' on popup.")
 

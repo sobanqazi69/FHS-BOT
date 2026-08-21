@@ -342,6 +342,90 @@ def click_lets_go(timeout: int = 20):
     return False
 
 
+def _try_keep_current_settings() -> bool:
+    """Detect and click 'Keep current settings' button if visible on screen via UIA or green pixel scan."""
+    import win32gui, pyautogui
+    from pywinauto import Desktop
+
+    # Approach A: UIA search across all visible windows
+    try:
+        desktop = Desktop(backend="uia")
+        for win in desktop.windows():
+            try:
+                title = win.window_text().strip().lower()
+                if any(k in title for k in ["xbox", "confirm", "purchases", ""]):
+                    for ctrl in win.descendants():
+                        try:
+                            txt = ctrl.window_text().strip().lower()
+                            if "keep current" in txt:
+                                try:
+                                    ctrl.click_input()
+                                except Exception:
+                                    r = ctrl.rectangle()
+                                    pyautogui.click(r.mid_point().x, r.mid_point().y)
+                                logger.info(f"Clicked 'Keep current settings': '{ctrl.window_text().strip()}'")
+                                time.sleep(0.5)
+                                return True
+                        except Exception:
+                            continue
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # Approach B: Scan visible Xbox popup windows for green button on the left (Keep current settings)
+    xbox_hwnds = []
+    def _find(hwnd, _):
+        try:
+            if win32gui.IsWindowVisible(hwnd):
+                t = win32gui.GetWindowText(hwnd).lower()
+                if "xbox" in t or "confirm" in t or t == "":
+                    r = win32gui.GetWindowRect(hwnd)
+                    w, h = r[2] - r[0], r[3] - r[1]
+                    if w > 300 and h > 300:
+                        xbox_hwnds.append(hwnd)
+        except Exception:
+            pass
+
+    try:
+        win32gui.EnumWindows(_find, None)
+    except Exception:
+        pass
+
+    for hwnd in xbox_hwnds:
+        try:
+            rect = win32gui.GetWindowRect(hwnd)
+            w, h = rect[2] - rect[0], rect[3] - rect[1]
+
+            shot = pyautogui.screenshot(region=(rect[0], rect[1], w, h))
+            px = shot.load()
+            # Scan left half of modal for green button (Keep current settings)
+            green_xs, green_ys = [], []
+            for sy in range(int(h * 0.65), int(h * 0.90), 3):
+                for sx in range(int(w * 0.15), int(w * 0.50), 3):
+                    r, g, b = px[sx, sy]
+                    if g > 100 and r < 70 and b < 70:
+                        green_xs.append(rect[0] + sx)
+                        green_ys.append(rect[1] + sy)
+
+            if green_xs and green_ys:
+                avg_x = sum(green_xs) // len(green_xs)
+                avg_y = sum(green_ys) // len(green_ys)
+                try:
+                    win32gui.SetForegroundWindow(hwnd)
+                except Exception:
+                    pass
+                time.sleep(0.1)
+                pyautogui.click(avg_x, avg_y)
+                logger.info(f"Clicked 'Keep current settings' green button via pixel scan at ({avg_x}, {avg_y}).")
+                time.sleep(0.5)
+                return True
+        except Exception:
+            pass
+
+    return False
+
+
 def click_forza(timeout: int = 30):
     import pyautogui
     import win32gui
@@ -350,6 +434,8 @@ def click_forza(timeout: int = 30):
 
     start = time.time()
     while time.time() - start < timeout:
+        # Check and dismiss any 'Keep current settings' popup blocking Forza
+        _try_keep_current_settings()
         xbox_hwnds = []
 
         def _collect(hwnd, _):
@@ -419,6 +505,7 @@ def click_play(timeout: int = 30, popup_handler=None):
     start = time.time()
     while time.time() - start < timeout:
         # Check and handle any popups blocking Play
+        _try_keep_current_settings()
         if popup_handler:
             try:
                 popup_handler()
