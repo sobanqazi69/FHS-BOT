@@ -61,11 +61,14 @@ def mark_account_red(sheet, row_number: int):
 
 
 def _all_texts():
-    """Collect (ctrl, text) pairs from all visible windows."""
+    """Collect (ctrl, text) pairs from visible Xbox and Microsoft account/Sign in windows."""
     pairs = []
     try:
         for win in Desktop(backend="uia").windows():
             try:
+                title = win.window_text().strip().lower()
+                if not any(k in title for k in ["xbox", "sign in", "microsoft account"]):
+                    continue
                 for ctrl in win.descendants():
                     try:
                         txt = ctrl.window_text().strip()

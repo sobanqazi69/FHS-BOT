@@ -484,14 +484,16 @@ def launch_and_play(email: str, sheet, row_num: int, gspread_client):
     logger.info("Pressing 8...")
     pyautogui.hotkey("ctrl", "8")
 
-    logger.info("Waiting 3 minutes before screenshot...")
-    time.sleep(180)
+    logger.info("Waiting 15s after pressing Enter...")
+    time.sleep(15)
 
-    insert_screenshot_in_sheet(sheet, row_num, gspread_client, email)
+    logger.info("Closing game with Alt+F4...")
+    pyautogui.hotkey("alt", "f4")
 
-    logger.info("Waiting 30s more for game to auto-close...")
-    time.sleep(30)
-    logger.info("Game should have auto-closed.")
+    logger.info("Waiting 10s after closing game...")
+    time.sleep(10)
+
+    logger.info("Done. Stopping.")
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────

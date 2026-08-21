@@ -373,7 +373,7 @@ def click_forza(timeout: int = 30):
     logger.error("Forza icon did not appear within timeout.")
 
 
-def click_play(timeout: int = 30):
+def click_play(timeout: int = 30, popup_handler=None):
     import pyautogui
     import win32gui
 
@@ -382,6 +382,13 @@ def click_play(timeout: int = 30):
 
     start = time.time()
     while time.time() - start < timeout:
+        # Check and handle any popups blocking Play
+        if popup_handler:
+            try:
+                popup_handler()
+            except Exception:
+                pass
+
         xbox_hwnds = []
 
         def _collect(hwnd, _):
