@@ -266,14 +266,86 @@ def _try_lets_go() -> bool:
 
 
 def _try_keep_current_settings() -> bool:
-    for ctrl, txt in _all_texts():
-        if "keep current" in txt.lower():
+    """Detect and click 'Keep current settings' button if visible on screen via UIA or green pixel scan."""
+    import win32gui, pyautogui
+    from pywinauto import Desktop
+
+    # Approach A: UIA search across all visible windows
+    try:
+        desktop = Desktop(backend="uia")
+        for win in desktop.windows():
             try:
-                ctrl.click_input()
-                logger.info(f"[post-login] Clicked 'Keep current settings': '{txt}'")
-                return True
+                title = win.window_text().strip().lower()
+                if any(k in title for k in ["xbox", "confirm", "purchases", ""]):
+                    for ctrl in win.descendants():
+                        try:
+                            txt = ctrl.window_text().strip().lower()
+                            if "keep current" in txt or "keep using" in txt:
+                                try:
+                                    ctrl.click_input()
+                                except Exception:
+                                    r = ctrl.rectangle()
+                                    pyautogui.click(r.mid_point().x, r.mid_point().y)
+                                clean_txt = ctrl.window_text().encode('ascii', 'ignore').decode('ascii').strip()
+                                logger.info(f"[post-login] Clicked 'Keep current settings': '{clean_txt}'")
+                                time.sleep(0.5)
+                                return True
+                        except Exception:
+                            continue
             except Exception:
-                pass
+                continue
+    except Exception:
+        pass
+
+    # Approach B: Scan main Xbox window for green button on the left (Keep current settings)
+    xbox_hwnds = []
+    def _find(hwnd, _):
+        try:
+            if win32gui.IsWindowVisible(hwnd):
+                t = win32gui.GetWindowText(hwnd).lower()
+                if "xbox" in t:
+                    r = win32gui.GetWindowRect(hwnd)
+                    w, h = r[2] - r[0], r[3] - r[1]
+                    if w > 400 and h > 400:
+                        xbox_hwnds.append(hwnd)
+        except Exception:
+            pass
+
+    try:
+        win32gui.EnumWindows(_find, None)
+    except Exception:
+        pass
+
+    for hwnd in xbox_hwnds:
+        try:
+            rect = win32gui.GetWindowRect(hwnd)
+            w, h = rect[2] - rect[0], rect[3] - rect[1]
+
+            shot = pyautogui.screenshot(region=(rect[0], rect[1], w, h))
+            px = shot.load()
+            green_xs, green_ys = [], []
+            for sy in range(int(h * 0.70), int(h * 0.90), 4):
+                for sx in range(int(w * 0.25), int(w * 0.45), 4):
+                    r, g, b = px[sx, sy]
+                    if g > 100 and r < 70 and b < 70:
+                        green_xs.append(rect[0] + sx)
+                        green_ys.append(rect[1] + sy)
+
+            if green_xs and green_ys:
+                avg_x = sum(green_xs) // len(green_xs)
+                avg_y = sum(green_ys) // len(green_ys)
+                try:
+                    win32gui.SetForegroundWindow(hwnd)
+                except Exception:
+                    pass
+                time.sleep(0.1)
+                pyautogui.click(avg_x, avg_y)
+                logger.info(f"[post-login] Clicked 'Keep current settings' green button via pixel scan at ({avg_x}, {avg_y}).")
+                time.sleep(0.5)
+                return True
+        except Exception:
+            pass
+
     return False
 
 
