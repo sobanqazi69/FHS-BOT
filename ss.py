@@ -25,6 +25,7 @@ from login_bot import (
     _try_diagnostic_data,
     mark_account_blue,
     mark_account_red,
+    _upload_to_catbox,
 )
 from config.settings import Settings
 
@@ -56,6 +57,40 @@ def load_accounts(credentials_file: str, spreadsheet_id: str, sheet_name: str = 
             row_numbers.append(i)
     logger.info(f"Loaded {len(accounts)} account(s) from sheet.")
     return accounts, sheet, row_numbers
+
+
+def mark_account_grey(sheet, row_number: int):
+    """Format row background color to Grey in Google Sheet."""
+    try:
+        sheet.format(f"A{row_number}", {
+            "backgroundColor": {"red": 0.5, "green": 0.5, "blue": 0.5}
+        })
+        logger.info(f"Marked row {row_number} grey in sheet.")
+    except Exception as e:
+        logger.error(f"Failed to mark row grey: {e}")
+
+
+def take_game_screenshot_and_add_to_sheet(sheet, row_number: int, email: str):
+    """Capture full-screen game screenshot, upload to catbox, insert IMAGE formula into Sheet column C."""
+    import io, pyautogui
+    try:
+        logger.info("Taking full-screen game screenshot...")
+        img = pyautogui.screenshot()
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+
+        url = _upload_to_catbox(buf)
+        if url:
+            sheet.update([[f'=IMAGE("{url}")']], f"C{row_number}", value_input_option="USER_ENTERED")
+            logger.info(f"Screenshot URL added to sheet row {row_number} column C: {url}")
+        else:
+            os.makedirs("screenshots", exist_ok=True)
+            local_path = os.path.abspath(f"screenshots/{email}_{int(time.time())}.png")
+            img.save(local_path)
+            logger.warning(f"Failed catbox upload — saved screenshot locally: {local_path}")
+    except Exception as e:
+        logger.error(f"Failed to capture and upload screenshot: {e}")
 
 
 def click_xbox_signin_robust(timeout: int = 15) -> bool:
@@ -111,7 +146,6 @@ def click_xbox_signin_robust(timeout: int = 15) -> bool:
             w, h = rect[2] - rect[0], rect[3] - rect[1]
 
             # 3. Scan for the green 'Sign in' button inside the Xbox window
-            # Scanning region: x from 30% to 70%, y from 50% to 85%
             shot = pyautogui.screenshot(region=(rect[0], rect[1], w, h))
             px = shot.load()
             x_start, x_end = int(w * 0.30), int(w * 0.70)
@@ -121,7 +155,6 @@ def click_xbox_signin_robust(timeout: int = 15) -> bool:
             for sy in range(y_start, y_end, 4):
                 for sx in range(x_start, x_end, 4):
                     r, g, b = px[sx, sy]
-                    # Microsoft Green: G > 100, R < 70, B < 70
                     if g > 100 and r < 70 and b < 70:
                         green_xs.append(rect[0] + sx)
                         green_ys.append(rect[1] + sy)
@@ -179,13 +212,14 @@ def close_game():
 def run_crypto_tool_steps():
     """
     1. Open folder 'C:\\Users\\pc\\Desktop\\FH6 SAFE SWAP'
-    2. Launch ForzaCryptoTool.exe
-    3. Maximize and focus ForzaCryptoTool window
-    4. Click 'Save Swap' in left sidebar
-    5. Click 'Browse' (under Donor save)
-    6. Select file 'C:\\Users\\pc\\Desktop\\FH6 SAFE SWAP\\C_ProfileData'
-    7. Click 'Detect' button under Your account section
-    8. Wait 5 seconds
+    2. Launch ForzaCryptoTool.exe and maximize
+    3. Click 'Save Swap' in left sidebar
+    4. Click 'Browse' (under Donor save)
+    5. Select file 'C:\\Users\\pc\\Desktop\\FH6 SAFE SWAP\\C_ProfileData'
+    6. Click 'Detect' button under Your account section
+    7. Click 'Swap save' button
+    8. Click 'Yes' on Confirm save swap popup
+    9. Wait 10 seconds and close ForzaCryptoTool
     """
     import subprocess
     import win32gui, win32con, pyautogui
@@ -210,7 +244,6 @@ def run_crypto_tool_steps():
     logger.info("Waiting 6s for ForzaCryptoTool to load...")
     time.sleep(6)
 
-    # Find ForzaCryptoTool window
     tool_hwnd = None
     def _find_tool(hwnd, _):
         nonlocal tool_hwnd
@@ -233,7 +266,6 @@ def run_crypto_tool_steps():
 
     logger.info(f"Found ForzaCryptoTool window handle: {tool_hwnd}")
 
-    # Focus and Maximize window
     try:
         tool_win = _Desktop(backend="uia").window(handle=tool_hwnd)
         tool_win.wait("visible", timeout=10)
@@ -332,9 +364,72 @@ def run_crypto_tool_steps():
         pyautogui.click(click_x, click_y)
         logger.info(f"Clicked 'Detect' button via coordinate fallback ({click_x}, {click_y}).")
 
-    logger.info("Waiting 5 seconds as requested...")
+    logger.info("Waiting 5 seconds after Detect...")
     time.sleep(5)
-    logger.info("ForzaCryptoTool steps completed successfully.")
+
+    # Step: Click "Swap save" button at bottom of CryptoTool screen
+    logger.info("Clicking 'Swap save' button...")
+    swap_clicked = False
+    try:
+        tool_win = _Desktop(backend="uia").window(handle=tool_hwnd)
+        for ctrl in tool_win.descendants():
+            try:
+                txt = ctrl.window_text().strip().lower()
+                if txt == "swap save" or "swap save" in txt:
+                    ctrl.click_input()
+                    logger.info("Clicked 'Swap save' button via UIA.")
+                    swap_clicked = True
+                    break
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    if not swap_clicked:
+        rect = win32gui.GetWindowRect(tool_hwnd)
+        click_x = rect[0] + int((rect[2] - rect[0]) * 0.25)
+        click_y = rect[1] + int((rect[3] - rect[1]) * 0.86)
+        pyautogui.click(click_x, click_y)
+        logger.info(f"Clicked 'Swap save' via coordinate fallback ({click_x}, {click_y}).")
+
+    time.sleep(2)
+
+    # Step: Click "Yes" on Confirm save swap popup
+    logger.info("Handling 'Confirm save swap' popup...")
+    yes_clicked = False
+    try:
+        desktop = _Desktop(backend="uia")
+        for win in desktop.windows():
+            try:
+                t = win.window_text().strip().lower()
+                if "confirm" in t or "swap" in t:
+                    for ctrl in win.descendants():
+                        if ctrl.window_text().strip().lower() == "yes":
+                            ctrl.click_input()
+                            logger.info("Clicked 'Yes' on popup via UIA.")
+                            yes_clicked = True
+                            break
+            except Exception:
+                continue
+            if yes_clicked:
+                break
+    except Exception:
+        pass
+
+    if not yes_clicked:
+        pyautogui.press("enter")
+        logger.info("Pressed Enter fallback for 'Yes' on popup.")
+
+    logger.info("Waiting 10 seconds for save swap to complete...")
+    time.sleep(10)
+
+    # Close ForzaCryptoTool
+    logger.info("Closing ForzaCryptoTool...")
+    try:
+        subprocess.run("taskkill /f /im ForzaCryptoTool.exe", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+    time.sleep(2)
 
 
 async def run():
@@ -347,7 +442,7 @@ async def run():
         logger.error("No spreadsheet_id found in config/config.json.")
         return
 
-    logger.info("=== STEP 1: LOGGING OUT CURRENT XBOX ACCOUNT ===")
+    logger.info("=== STEP 1: INITIAL LOGOUT ===")
     open_xbox()
     _close_xbox_popups()
     _try_diagnostic_data()
@@ -355,7 +450,7 @@ async def run():
     logger.info("Waiting 4s after signout...")
     time.sleep(4)
 
-    logger.info("=== STEP 2: PICKING ACCOUNT FROM GOOGLE SHEET ===")
+    logger.info("=== STEP 2: PICKING ACCOUNTS FROM GOOGLE SHEET ===")
     accounts, sheet, row_numbers = load_accounts(
         credentials_file=cred_file,
         spreadsheet_id=sheet_id,
@@ -367,7 +462,9 @@ async def run():
         return
 
     for (email, password), row_num in zip(accounts, row_numbers):
-        logger.info(f"\n--- Processing account from sheet row {row_num}: {email} ---")
+        logger.info(f"\n=======================================================")
+        logger.info(f"   Processing account row {row_num}: {email}")
+        logger.info(f"=======================================================")
 
         logger.info("=== STEP 3: LOGGING IN ACCOUNT ===")
         open_xbox()
@@ -377,7 +474,6 @@ async def run():
         time.sleep(3)
 
         signed_in = False
-        # Try account picker selection first if account is already listed on device
         if select_account(email, wait_seconds=2):
             logger.info(f"Selected account '{email}' via Windows Account Picker.")
             dismiss_account_popup(timeout=15)
@@ -396,11 +492,10 @@ async def run():
         mark_account_blue(sheet, row_num)
         logger.info(f"Successfully signed in as {email}.")
 
-        logger.info("=== STEP 4: OPENING GAME ===")
+        logger.info("=== STEP 4: FIRST GAME LAUNCH (INITIAL SYNC) ===")
         click_forza(timeout=30)
         click_play(timeout=30)
         click_ignore(wait_seconds=5, timeout=30)
-        logger.info("Game launch sequence initiated successfully.")
 
         logger.info("Spamming Enter for 45 seconds...")
         spam_enter_after_altenter(duration=45)
@@ -414,9 +509,36 @@ async def run():
         logger.info("Closing Xbox app...")
         close_xbox()
 
-        # Step 5: Open FH6 SAFE SWAP folder & execute Forza Crypto Tool steps
+        logger.info("=== STEP 5: FORZA CRYPTO TOOL SAVE SWAP ===")
         run_crypto_tool_steps()
-        break  # Processed the account and completed full sequence
+
+        logger.info("=== STEP 6: RE-OPEN XBOX & SECOND GAME LAUNCH ===")
+        open_xbox()
+        time.sleep(3)
+        click_forza(timeout=30)
+        click_play(timeout=30)
+        click_ignore(wait_seconds=5, timeout=30)
+
+        logger.info("Spamming Enter for 45 seconds...")
+        spam_enter_after_altenter(duration=45)
+
+        logger.info("=== STEP 7: SCREENSHOT, SHEET UPDATE (GREY) & CLEANUP ===")
+        take_game_screenshot_and_add_to_sheet(sheet, row_num, email)
+        mark_account_grey(sheet, row_num)
+
+        logger.info("Closing game...")
+        close_game()
+
+        logger.info("Waiting 15 seconds on Xbox app...")
+        time.sleep(15)
+
+        logger.info("Logging out of Xbox account...")
+        signout_xbox_account(wait_seconds=0)
+
+        logger.info(f"Completed processing account {email}. Moving to next account...\n")
+        time.sleep(3)
+
+    logger.info("All accounts in Google Sheet processed successfully!")
 
 
 if __name__ == "__main__":
