@@ -472,10 +472,20 @@ def run_crypto_tool_steps():
                                 break
                 except Exception:
                     continue
-                if yes_clicked:
-                    break
         except Exception:
             pass
+
+        if not yes_clicked:
+            pyautogui.press("enter")
+            logger.info("Pressed Enter fallback for 'Yes' on popup.")
+
+    logger.info("Waiting 40 seconds for save swap to complete...")
+    time.sleep(40)
+
+    # Close ForzaCryptoTool & extra windows
+    close_all_windows()
+    logger.info("ForzaCryptoTool steps completed successfully.")
+
 
 def close_all_windows():
     """Close all extra open windows (Explorer folder windows, ForzaCryptoTool, etc.)."""
@@ -587,6 +597,9 @@ async def run():
 
         logger.info("=== STEP 5: FORZA CRYPTO TOOL SAVE SWAP ===")
         run_crypto_tool_steps()
+
+        logger.info("Ensuring all extra open windows are closed before re-opening Xbox...")
+        close_all_windows()
 
         logger.info("=== STEP 6: RE-OPEN XBOX & SECOND GAME LAUNCH ===")
         open_xbox()
