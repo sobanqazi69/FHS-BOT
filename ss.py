@@ -519,8 +519,8 @@ async def run():
         click_play(timeout=30)
         click_ignore(wait_seconds=5, timeout=30)
 
-        logger.info("Spamming Enter for 45 seconds...")
-        spam_enter_after_altenter(duration=45)
+        logger.info("Spamming Enter for 90 seconds...")
+        spam_enter_after_altenter(duration=90)
 
         logger.info("=== STEP 7: SCREENSHOT, SHEET UPDATE (GREY) & CLEANUP ===")
         take_game_screenshot_and_add_to_sheet(sheet, row_num, email)
