@@ -10,16 +10,20 @@ logger = logging.getLogger(__name__)
 
 def signout_xbox_account(wait_seconds: int = 10):
     import win32gui
+    from pywinauto import Desktop as _Desktop
 
     logger.info(f"Waiting {wait_seconds}s then signing out of current Xbox account...")
-    time.sleep(wait_seconds)
+    if wait_seconds > 0:
+        time.sleep(wait_seconds)
 
     xbox_hwnds = []
 
     def _find(hwnd, _):
         try:
-            if win32gui.IsWindowVisible(hwnd) and "xbox" in win32gui.GetWindowText(hwnd).lower():
-                xbox_hwnds.append(hwnd)
+            if win32gui.IsWindowVisible(hwnd):
+                title = win32gui.GetWindowText(hwnd).lower()
+                if "xbox" in title or "microsoft" in title:
+                    xbox_hwnds.append(hwnd)
         except Exception:
             pass
 
@@ -28,59 +32,91 @@ def signout_xbox_account(wait_seconds: int = 10):
     except Exception:
         pass
 
-    for hwnd in xbox_hwnds:
-        rect = win32gui.GetWindowRect(hwnd)
-        w, h = rect[2] - rect[0], rect[3] - rect[1]
-        if w < 200 or h < 200:
-            continue
-
+    if not xbox_hwnds:
         try:
-            _force_foreground(hwnd)
+            desktop = _Desktop(backend="uia")
+            for win in desktop.windows():
+                if "xbox" in win.window_text().lower():
+                    xbox_hwnds.append(win.handle)
         except Exception:
             pass
-        time.sleep(0.3)
 
-        # Click profile/ULTIMATE icon at top-left of Xbox sidebar
-        profile_x = rect[0] + int(w * 0.04)
-        profile_y = rect[1] + int(h * 0.05)
-
-        def _try_signout():
-            pyautogui.click(profile_x, profile_y)
-            logger.info(f"Clicked profile icon at ({profile_x}, {profile_y}).")
-            time.sleep(1.5)
-
-            # UIA search for Sign out
-            try:
-                from pywinauto import Desktop as _Desktop
-                xbox_win = _Desktop(backend="uia").window(handle=hwnd)
-                for ctrl in xbox_win.descendants():
-                    try:
-                        if ctrl.window_text().strip().lower() == "sign out":
-                            ctrl.click_input()
-                            logger.info("Clicked Sign out via UIA.")
-                            time.sleep(2)
-                            return True
-                    except Exception:
-                        continue
-            except Exception:
-                pass
-
-            # Pixel fallback: Sign out is ~78% down the dropdown on the left side
-            so_x = rect[0] + int(w * 0.08)
-            so_y = rect[1] + int(h * 0.78)
-            pyautogui.click(so_x, so_y)
-            logger.info(f"Clicked Sign out at fallback pixel ({so_x}, {so_y}).")
-            time.sleep(2)
-            return False
-
-        # Try once, retry if UIA didn't confirm it
-        found = _try_signout()
-        if not found:
-            logger.warning("Sign out not confirmed via UIA — retrying once...")
-            _try_signout()
+    if not xbox_hwnds:
+        logger.warning("Xbox window not found for sign-out.")
         return
 
-    logger.warning("Xbox window not found for sign-out.")
+    hwnd = xbox_hwnds[0]
+    rect = win32gui.GetWindowRect(hwnd)
+    w, h = rect[2] - rect[0], rect[3] - rect[1]
+
+    try:
+        _force_foreground(hwnd)
+    except Exception:
+        try:
+            win32gui.SetForegroundWindow(hwnd)
+        except Exception:
+            pass
+    time.sleep(0.5)
+
+    # 1. Check if already signed out
+    try:
+        desktop = _Desktop(backend="uia")
+        for win in desktop.windows():
+            for ctrl in win.descendants(control_type="Button"):
+                if ctrl.window_text().strip().lower() == "sign in":
+                    logger.info("Xbox is already signed out ('Sign in' button found).")
+                    return
+    except Exception:
+        pass
+
+    # 2. Click profile icon at top-left of Xbox sidebar
+    profile_x = rect[0] + int(w * 0.04)
+    profile_y = rect[1] + int(h * 0.05)
+
+    for attempt in range(1, 3):
+        logger.info(f"Sign-out attempt {attempt}: Clicking profile icon at ({profile_x}, {profile_y})...")
+        pyautogui.click(profile_x, profile_y)
+        time.sleep(1.5)
+
+        # Search ALL windows across UIA Desktop for 'Sign out' (flyout popup menu)
+        try:
+            desktop = _Desktop(backend="uia")
+            for win in desktop.windows():
+                try:
+                    for ctrl in win.descendants():
+                        try:
+                            txt = ctrl.window_text().strip().lower()
+                            if txt in ["sign out", "signout"]:
+                                ctrl.click_input()
+                                logger.info(f"Successfully clicked 'Sign out' via UIA in '{win.window_text()}'.")
+                                time.sleep(2)
+                                return
+                        except Exception:
+                            continue
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        # Fallback click: Sign out inside profile flyout dropdown (~200px down from profile icon)
+        so_x = rect[0] + int(w * 0.08)
+        so_y = profile_y + 200
+        pyautogui.click(so_x, so_y)
+        logger.info(f"Clicked 'Sign out' at flyout fallback pixel ({so_x}, {so_y}).")
+        time.sleep(2)
+
+        # Check if sign in button appeared
+        try:
+            desktop = _Desktop(backend="uia")
+            for win in desktop.windows():
+                for ctrl in win.descendants(control_type="Button"):
+                    if ctrl.window_text().strip().lower() == "sign in":
+                        logger.info("Sign out confirmed ('Sign in' button now visible).")
+                        return
+        except Exception:
+            pass
+
+    logger.warning("Sign out sequence completed.")
 
 
 def click_xbox_signin(wait_seconds: int = 5):

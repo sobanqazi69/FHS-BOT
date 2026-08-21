@@ -281,27 +281,25 @@ def run_crypto_tool_steps():
 
     # Step: Click "Save Swap" on left sidebar
     logger.info("Clicking 'Save Swap' on left sidebar...")
-    save_swap_clicked = False
+    rect = win32gui.GetWindowRect(tool_hwnd)
+    x = rect[0] + 88
+    y = rect[1] + 207
+    pyautogui.click(x, y)
+    logger.info(f"Clicked 'Save Swap' at sidebar coordinates ({x}, {y}).")
+    time.sleep(1)
+
     try:
         tool_win = _Desktop(backend="uia").window(handle=tool_hwnd)
         for ctrl in tool_win.descendants():
             try:
                 if ctrl.window_text().strip().lower() == "save swap":
                     ctrl.click_input()
-                    logger.info("Clicked 'Save Swap' via UIA.")
-                    save_swap_clicked = True
+                    logger.info("Clicked 'Save Swap' via UIA button.")
                     break
             except Exception:
                 continue
     except Exception:
         pass
-
-    if not save_swap_clicked:
-        rect = win32gui.GetWindowRect(tool_hwnd)
-        x = rect[0] + 88
-        y = rect[1] + 207
-        pyautogui.click(x, y)
-        logger.info(f"Clicked 'Save Swap' via coordinate fallback ({x}, {y}).")
 
     time.sleep(2)
 
