@@ -176,6 +176,167 @@ def close_game():
         pass
 
 
+def run_crypto_tool_steps():
+    """
+    1. Open folder 'C:\\Users\\pc\\Desktop\\FH6 SAFE SWAP'
+    2. Launch ForzaCryptoTool.exe
+    3. Maximize and focus ForzaCryptoTool window
+    4. Click 'Save Swap' in left sidebar
+    5. Click 'Browse' (under Donor save)
+    6. Select file 'C:\\Users\\pc\\Desktop\\FH6 SAFE SWAP\\C_ProfileData'
+    7. Click 'Detect' button under Your account section
+    8. Wait 5 seconds
+    """
+    import subprocess
+    import win32gui, win32con, pyautogui
+    from pywinauto import Desktop as _Desktop
+
+    logger.info("=== STEP 5: OPENING FH6 SAFE SWAP FOLDER & FORZA CRYPTO TOOL ===")
+    try:
+        subprocess.Popen(["explorer", r"C:\Users\pc\Desktop\FH6 SAFE SWAP"])
+        logger.info("Opened FH6 SAFE SWAP folder.")
+    except Exception as e:
+        logger.warning(f"Failed to open explorer folder: {e}")
+    time.sleep(2)
+
+    logger.info("Launching ForzaCryptoTool.exe...")
+    try:
+        subprocess.Popen([r"C:\Users\pc\Desktop\FH6 SAFE SWAP\ForzaCryptoTool.exe"])
+        logger.info("Launched ForzaCryptoTool.exe.")
+    except Exception as e:
+        logger.error(f"Failed to launch ForzaCryptoTool.exe: {e}")
+        return
+
+    logger.info("Waiting 6s for ForzaCryptoTool to load...")
+    time.sleep(6)
+
+    # Find ForzaCryptoTool window
+    tool_hwnd = None
+    def _find_tool(hwnd, _):
+        nonlocal tool_hwnd
+        try:
+            if win32gui.IsWindowVisible(hwnd):
+                title = win32gui.GetWindowText(hwnd).lower()
+                if "forzacryptotool" in title or "forza crypto" in title:
+                    tool_hwnd = hwnd
+        except Exception:
+            pass
+
+    try:
+        win32gui.EnumWindows(_find_tool, None)
+    except Exception:
+        pass
+
+    if not tool_hwnd:
+        logger.error("ForzaCryptoTool window not found.")
+        return
+
+    logger.info(f"Found ForzaCryptoTool window handle: {tool_hwnd}")
+
+    # Focus and Maximize window
+    try:
+        tool_win = _Desktop(backend="uia").window(handle=tool_hwnd)
+        tool_win.wait("visible", timeout=10)
+        tool_win.maximize()
+        time.sleep(1)
+        tool_win.set_focus()
+        time.sleep(0.5)
+    except Exception as e:
+        logger.warning(f"Could not maximize via pywinauto: {e}")
+        win32gui.ShowWindow(tool_hwnd, win32con.SW_SHOWMAXIMIZED)
+        time.sleep(1)
+
+    # Step: Click "Save Swap" on left sidebar
+    logger.info("Clicking 'Save Swap' on left sidebar...")
+    save_swap_clicked = False
+    try:
+        tool_win = _Desktop(backend="uia").window(handle=tool_hwnd)
+        for ctrl in tool_win.descendants():
+            try:
+                if ctrl.window_text().strip().lower() == "save swap":
+                    ctrl.click_input()
+                    logger.info("Clicked 'Save Swap' via UIA.")
+                    save_swap_clicked = True
+                    break
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    if not save_swap_clicked:
+        rect = win32gui.GetWindowRect(tool_hwnd)
+        x = rect[0] + 88
+        y = rect[1] + 207
+        pyautogui.click(x, y)
+        logger.info(f"Clicked 'Save Swap' via coordinate fallback ({x}, {y}).")
+
+    time.sleep(2)
+
+    # Step: Click "Browse" button (under Donor save)
+    logger.info("Clicking 'Browse' button...")
+    browse_clicked = False
+    try:
+        tool_win = _Desktop(backend="uia").window(handle=tool_hwnd)
+        for ctrl in tool_win.descendants():
+            try:
+                if ctrl.window_text().strip().lower() == "browse":
+                    ctrl.click_input()
+                    logger.info("Clicked 'Browse' button via UIA.")
+                    browse_clicked = True
+                    break
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    if not browse_clicked:
+        rect = win32gui.GetWindowRect(tool_hwnd)
+        pyautogui.click(rect[0] + 880, rect[1] + 450)
+        logger.info("Clicked 'Browse' via coordinate fallback.")
+
+    # Step: Enter donor save file path into file open dialog
+    logger.info("Waiting 3s for file dialog...")
+    time.sleep(3)
+    donor_path = r"C:\Users\pc\Desktop\FH6 SAFE SWAP\C_ProfileData"
+    logger.info(f"Selecting donor path in file dialog: {donor_path}")
+    pyautogui.hotkey("ctrl", "a")
+    time.sleep(0.2)
+    pyautogui.typewrite(donor_path, interval=0.03)
+    time.sleep(0.4)
+    pyautogui.press("enter")
+    logger.info("Entered file path and pressed Enter.")
+    time.sleep(2)
+
+    # Step: Click "Detect" button under "Your account" section
+    logger.info("Locating 'Detect' button...")
+    detect_clicked = False
+    try:
+        tool_win = _Desktop(backend="uia").window(handle=tool_hwnd)
+        for ctrl in tool_win.descendants():
+            try:
+                txt = ctrl.window_text().strip().lower()
+                if txt == "detect" or "detect" in txt:
+                    ctrl.click_input()
+                    logger.info(f"Clicked 'Detect' button via UIA: '{ctrl.window_text().strip()}'")
+                    detect_clicked = True
+                    break
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    if not detect_clicked:
+        rect = win32gui.GetWindowRect(tool_hwnd)
+        click_x = rect[0] + int((rect[2] - rect[0]) * 0.88)
+        click_y = rect[1] + int((rect[3] - rect[1]) * 0.67)
+        pyautogui.click(click_x, click_y)
+        logger.info(f"Clicked 'Detect' button via coordinate fallback ({click_x}, {click_y}).")
+
+    logger.info("Waiting 5 seconds as requested...")
+    time.sleep(5)
+    logger.info("ForzaCryptoTool steps completed successfully.")
+
+
 async def run():
     settings = Settings()
     cred_file = settings.get("credentials_file", "config/credentials.json")
@@ -252,7 +413,10 @@ async def run():
 
         logger.info("Closing Xbox app...")
         close_xbox()
-        break  # Processed the account and completed sequence
+
+        # Step 5: Open FH6 SAFE SWAP folder & execute Forza Crypto Tool steps
+        run_crypto_tool_steps()
+        break  # Processed the account and completed full sequence
 
 
 if __name__ == "__main__":
