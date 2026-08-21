@@ -477,19 +477,35 @@ def run_crypto_tool_steps():
         except Exception:
             pass
 
-        pyautogui.press("enter")
-        logger.info("Pressed Enter fallback for 'Yes' on popup.")
-
-    logger.info("Waiting 40 seconds for save swap to complete...")
-    time.sleep(40)
-
-    # Close ForzaCryptoTool
-    logger.info("Closing ForzaCryptoTool...")
+def close_all_windows():
+    """Close all extra open windows (Explorer folder windows, ForzaCryptoTool, etc.)."""
+    import subprocess
+    logger.info("Closing all extra open windows (Explorer, ForzaCryptoTool)...")
     try:
         subprocess.run("taskkill /f /im ForzaCryptoTool.exe", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass
+    try:
+        # Close all Explorer folder windows cleanly
+        cmd = 'powershell -command "(New-Object -ComObject Shell.Application).Windows() | ForEach-Object { $_.Quit() }"'
+        subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
     time.sleep(2)
+
+
+def run_crypto_tool_steps():
+    """
+    1. Open folder 'C:\\Users\\pc\\Desktop\\FH6 SAFE SWAP'
+    2. Launch ForzaCryptoTool.exe and maximize
+    3. Click 'Save Swap' in left sidebar
+    4. Click 'Browse' (under Donor save)
+    5. Select file 'C:\\Users\\pc\\Desktop\\FH6 SAFE SWAP\\C_ProfileData'
+    6. Click 'Detect' button under Your account section
+    7. Click 'Swap save' button
+    8. Click 'Yes' on Confirm save swap popup
+    9. Wait 40 seconds and close all extra windows
+    """
 
 
 async def run():
