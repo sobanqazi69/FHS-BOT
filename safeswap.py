@@ -185,15 +185,83 @@ def _try_diagnostic_data() -> bool:
 
 
 def _try_lets_go() -> bool:
-    for ctrl, txt in _all_texts():
-        lower = txt.lower()
-        if "let" in lower and "go" in lower:
+    """Robustly find and click the 'Let's go' button via UIA text search or green pixel scan."""
+    import win32gui, pyautogui
+    from pywinauto import Desktop
+
+    # Approach A: UIA search across all visible windows
+    try:
+        desktop = Desktop(backend="uia")
+        for win in desktop.windows():
             try:
-                ctrl.click_input()
-                logger.info(f"[post-login] Clicked 'Let's go': '{txt}'")
-                return True
+                title = win.window_text().strip().lower()
+                if any(k in title for k in ["xbox", "welcome", "sign in", ""]):
+                    for ctrl in win.descendants():
+                        try:
+                            txt = ctrl.window_text().strip().lower()
+                            if "let" in txt and "go" in txt:
+                                try:
+                                    ctrl.click_input()
+                                except Exception:
+                                    r = ctrl.rectangle()
+                                    pyautogui.click(r.mid_point().x, r.mid_point().y)
+                                logger.info(f"[post-login] Clicked 'Let's go': '{ctrl.window_text().strip()}'")
+                                return True
+                        except Exception:
+                            continue
             except Exception:
-                pass
+                continue
+    except Exception:
+        pass
+
+    # Approach B: Green button scan inside any Xbox / Welcome back popup window
+    xbox_hwnds = []
+    def _find(hwnd, _):
+        try:
+            if win32gui.IsWindowVisible(hwnd):
+                t = win32gui.GetWindowText(hwnd).lower()
+                if "xbox" in t or "welcome" in t or t == "":
+                    r = win32gui.GetWindowRect(hwnd)
+                    w, h = r[2] - r[0], r[3] - r[1]
+                    if 250 < w < 900 and 250 < h < 900:  # popup size window
+                        xbox_hwnds.append(hwnd)
+        except Exception:
+            pass
+
+    try:
+        win32gui.EnumWindows(_find, None)
+    except Exception:
+        pass
+
+    for hwnd in xbox_hwnds:
+        try:
+            rect = win32gui.GetWindowRect(hwnd)
+            w, h = rect[2] - rect[0], rect[3] - rect[1]
+
+            shot = pyautogui.screenshot(region=(rect[0], rect[1], w, h))
+            px = shot.load()
+            green_xs, green_ys = [], []
+            for sy in range(int(h * 0.70), int(h * 0.95), 3):
+                for sx in range(int(w * 0.10), int(w * 0.90), 3):
+                    r, g, b = px[sx, sy]
+                    if g > 100 and r < 70 and b < 70:
+                        green_xs.append(rect[0] + sx)
+                        green_ys.append(rect[1] + sy)
+
+            if green_xs and green_ys:
+                avg_x = sum(green_xs) // len(green_xs)
+                avg_y = sum(green_ys) // len(green_ys)
+                try:
+                    win32gui.SetForegroundWindow(hwnd)
+                except Exception:
+                    pass
+                time.sleep(0.1)
+                pyautogui.click(avg_x, avg_y)
+                logger.info(f"[post-login] Clicked 'Let's go' green button via pixel scan at ({avg_x}, {avg_y}).")
+                return True
+        except Exception:
+            pass
+
     return False
 
 
