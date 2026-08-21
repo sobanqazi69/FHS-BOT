@@ -327,22 +327,35 @@ def _close_xbox_popups():
     hwnds = []
 
     def _find(hwnd, _):
-        if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd) == "Xbox":
-            hwnds.append(hwnd)
+        try:
+            if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd) == "Xbox":
+                hwnds.append(hwnd)
+        except Exception:
+            pass
 
-    win32gui.EnumWindows(_find, None)
+    try:
+        win32gui.EnumWindows(_find, None)
+    except Exception:
+        pass
+
     if len(hwnds) <= 1:
         return
 
     # Keep the largest window (main app), close all smaller ones
     def _area(hwnd):
-        r = win32gui.GetWindowRect(hwnd)
-        return (r[2] - r[0]) * (r[3] - r[1])
+        try:
+            r = win32gui.GetWindowRect(hwnd)
+            return (r[2] - r[0]) * (r[3] - r[1])
+        except Exception:
+            return 0
 
     hwnds.sort(key=_area, reverse=True)
     for hwnd in hwnds[1:]:
-        win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
-        logger.info("Closed extra Xbox popup window (Welcome back / Let's go).")
+        try:
+            win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+            logger.info("Closed extra Xbox popup window (Welcome back / Let's go).")
+        except Exception:
+            pass
 
 
 def _check_protect_account() -> bool:
@@ -419,6 +432,39 @@ def _handle_post_login_pages(email: str, password: str, is_retry: bool = False) 
     return True
 
 
+def _try_use_password_instead(timeout: int = 5) -> bool:
+    """Check if 'Use your password instead' link is visible and click it."""
+    from pywinauto import Desktop
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            desktop = Desktop(backend="uia")
+            for win in desktop.windows():
+                try:
+                    title = win.window_text().strip().lower()
+                    if any(k in title for k in ["sign in", "microsoft account", "xbox", ""]):
+                        for ctrl in win.descendants():
+                            try:
+                                txt = ctrl.window_text().strip()
+                                lower = txt.lower()
+                                if "use your password" in lower or ("password" in lower and "instead" in lower):
+                                    try:
+                                        ctrl.click_input()
+                                    except Exception:
+                                        r = ctrl.rectangle()
+                                        pyautogui.click(r.mid_point().x, r.mid_point().y)
+                                    logger.info(f"[credentials] Clicked 'Use your password instead': '{txt}'")
+                                    return True
+                            except Exception:
+                                continue
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        time.sleep(1)
+    return False
+
+
 # ── Credentials flow (shared by main + retry) ─────────────────────────────────
 
 def _do_credentials_flow(email: str, password: str, is_retry: bool = False) -> bool:
@@ -490,6 +536,13 @@ def _do_credentials_flow(email: str, password: str, is_retry: bool = False) -> b
     pyautogui.write(email, interval=0.05)
     _click_web_button(["Next"], fallback_key="enter")
     logger.info("Clicked Next.")
+
+    # Check for 'Use your password instead' link
+    logger.info("Waiting 4s after Next to check for 'Use your password instead' link...")
+    time.sleep(4)
+    if _try_use_password_instead(timeout=5):
+        logger.info("Clicked 'Use your password instead', waiting 3s for password field to appear...")
+        time.sleep(3)
 
     # Password
     logger.info("Waiting 5s for password field...")

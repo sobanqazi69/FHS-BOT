@@ -17,10 +17,16 @@ def signout_xbox_account(wait_seconds: int = 10):
     xbox_hwnds = []
 
     def _find(hwnd, _):
-        if win32gui.IsWindowVisible(hwnd) and "xbox" in win32gui.GetWindowText(hwnd).lower():
-            xbox_hwnds.append(hwnd)
+        try:
+            if win32gui.IsWindowVisible(hwnd) and "xbox" in win32gui.GetWindowText(hwnd).lower():
+                xbox_hwnds.append(hwnd)
+        except Exception:
+            pass
 
-    win32gui.EnumWindows(_find, None)
+    try:
+        win32gui.EnumWindows(_find, None)
+    except Exception:
+        pass
 
     for hwnd in xbox_hwnds:
         rect = win32gui.GetWindowRect(hwnd)
@@ -123,10 +129,16 @@ def close_signin_popups():
     hwnds = []
 
     def _find(hwnd, _):
-        if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd) == "Sign in":
-            hwnds.append(hwnd)
+        try:
+            if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd) == "Sign in":
+                hwnds.append(hwnd)
+        except Exception:
+            pass
 
-    win32gui.EnumWindows(_find, None)
+    try:
+        win32gui.EnumWindows(_find, None)
+    except Exception:
+        pass
     for hwnd in hwnds:
         win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
         logger.info("Closed stale 'Sign in' popup window.")
@@ -219,13 +231,19 @@ def dismiss_account_popup(timeout: int = 15):
         popup_hwnds = []
 
         def _find(hwnd, _):
-            if not win32gui.IsWindowVisible(hwnd):
-                return
-            title = win32gui.GetWindowText(hwnd).lower()
-            if "confirm" in title or "purchase" in title or "microsoft store" in title:
-                popup_hwnds.append(hwnd)
+            try:
+                if not win32gui.IsWindowVisible(hwnd):
+                    return
+                title = win32gui.GetWindowText(hwnd).lower()
+                if "confirm" in title or "purchase" in title or "microsoft store" in title:
+                    popup_hwnds.append(hwnd)
+            except Exception:
+                pass
 
-        win32gui.EnumWindows(_find, None)
+        try:
+            win32gui.EnumWindows(_find, None)
+        except Exception:
+            pass
 
         if popup_hwnds:
             hwnd = popup_hwnds[0]
@@ -239,10 +257,16 @@ def dismiss_account_popup(timeout: int = 15):
         xbox_hwnds = []
 
         def _find_xbox(hwnd, _):
-            if win32gui.IsWindowVisible(hwnd) and "xbox" in win32gui.GetWindowText(hwnd).lower():
-                xbox_hwnds.append(hwnd)
+            try:
+                if win32gui.IsWindowVisible(hwnd) and "xbox" in win32gui.GetWindowText(hwnd).lower():
+                    xbox_hwnds.append(hwnd)
+            except Exception:
+                pass
 
-        win32gui.EnumWindows(_find_xbox, None)
+        try:
+            win32gui.EnumWindows(_find_xbox, None)
+        except Exception:
+            pass
 
         for hwnd in xbox_hwnds:
             rect = win32gui.GetWindowRect(hwnd)
@@ -283,10 +307,16 @@ def click_lets_go(timeout: int = 20):
         xbox_hwnds = []
 
         def _collect(hwnd, _):
-            if win32gui.IsWindowVisible(hwnd) and "xbox" in win32gui.GetWindowText(hwnd).lower():
-                xbox_hwnds.append(hwnd)
+            try:
+                if win32gui.IsWindowVisible(hwnd) and "xbox" in win32gui.GetWindowText(hwnd).lower():
+                    xbox_hwnds.append(hwnd)
+            except Exception:
+                pass
 
-        win32gui.EnumWindows(_collect, None)
+        try:
+            win32gui.EnumWindows(_collect, None)
+        except Exception:
+            pass
 
         for hwnd in xbox_hwnds:
             rect = win32gui.GetWindowRect(hwnd)
@@ -323,10 +353,16 @@ def click_forza(timeout: int = 30):
         xbox_hwnds = []
 
         def _collect(hwnd, _):
-            if win32gui.IsWindowVisible(hwnd) and "xbox" in win32gui.GetWindowText(hwnd).lower():
-                xbox_hwnds.append(hwnd)
+            try:
+                if win32gui.IsWindowVisible(hwnd) and "xbox" in win32gui.GetWindowText(hwnd).lower():
+                    xbox_hwnds.append(hwnd)
+            except Exception:
+                pass
 
-        win32gui.EnumWindows(_collect, None)
+        try:
+            win32gui.EnumWindows(_collect, None)
+        except Exception:
+            pass
 
         for hwnd in xbox_hwnds:
             rect = win32gui.GetWindowRect(hwnd)
@@ -392,10 +428,16 @@ def click_play(timeout: int = 30, popup_handler=None):
         xbox_hwnds = []
 
         def _collect(hwnd, _):
-            if win32gui.IsWindowVisible(hwnd) and "xbox" in win32gui.GetWindowText(hwnd).lower():
-                xbox_hwnds.append(hwnd)
+            try:
+                if win32gui.IsWindowVisible(hwnd) and "xbox" in win32gui.GetWindowText(hwnd).lower():
+                    xbox_hwnds.append(hwnd)
+            except Exception:
+                pass
 
-        win32gui.EnumWindows(_collect, None)
+        try:
+            win32gui.EnumWindows(_collect, None)
+        except Exception:
+            pass
 
         for hwnd in xbox_hwnds:
             rect = win32gui.GetWindowRect(hwnd)
@@ -468,10 +510,16 @@ def click_forza_taskbar(wait_seconds: int = 3):
         found = []
 
         def _find(hwnd, _):
-            if win32gui.IsWindowVisible(hwnd) and "forza" in win32gui.GetWindowText(hwnd).lower():
-                found.append(hwnd)
+            try:
+                if win32gui.IsWindowVisible(hwnd) and "forza" in win32gui.GetWindowText(hwnd).lower():
+                    found.append(hwnd)
+            except Exception:
+                pass
 
-        win32gui.EnumWindows(_find, None)
+        try:
+            win32gui.EnumWindows(_find, None)
+        except Exception:
+            pass
         if found:
             win32gui.SetForegroundWindow(found[0])
             logger.info(f"Brought Forza window to foreground: '{win32gui.GetWindowText(found[0])}'")
@@ -515,11 +563,17 @@ def click_ignore(wait_seconds: int = 10, timeout: int = 60):
         found = []
 
         def _find(hwnd, _):
-            title = win32gui.GetWindowText(hwnd).lower()
-            if "compatibility" in title and "warning" in title:
-                found.append(hwnd)
+            try:
+                title = win32gui.GetWindowText(hwnd).lower()
+                if "compatibility" in title and "warning" in title:
+                    found.append(hwnd)
+            except Exception:
+                pass
 
-        win32gui.EnumWindows(_find, None)
+        try:
+            win32gui.EnumWindows(_find, None)
+        except Exception:
+            pass
 
         for hwnd in found:
             title = win32gui.GetWindowText(hwnd)
@@ -580,11 +634,17 @@ def press_enter_start_game(timeout: int = 120):
         forza_hwnds = []
 
         def _find(hwnd, _):
-            title = win32gui.GetWindowText(hwnd)
-            if win32gui.IsWindowVisible(hwnd) and "forza" in title.lower() and "xbox" not in title.lower():
-                forza_hwnds.append(hwnd)
+            try:
+                title = win32gui.GetWindowText(hwnd)
+                if win32gui.IsWindowVisible(hwnd) and "forza" in title.lower() and "xbox" not in title.lower():
+                    forza_hwnds.append(hwnd)
+            except Exception:
+                pass
 
-        win32gui.EnumWindows(_find, None)
+        try:
+            win32gui.EnumWindows(_find, None)
+        except Exception:
+            pass
 
         for hwnd in forza_hwnds:
             rect = win32gui.GetWindowRect(hwnd)
@@ -733,10 +793,16 @@ def close_xbox():
     hwnds = []
 
     def _find(hwnd, _):
-        if win32gui.IsWindowVisible(hwnd) and "xbox" in win32gui.GetWindowText(hwnd).lower():
-            hwnds.append(hwnd)
+        try:
+            if win32gui.IsWindowVisible(hwnd) and "xbox" in win32gui.GetWindowText(hwnd).lower():
+                hwnds.append(hwnd)
+        except Exception:
+            pass
 
-    win32gui.EnumWindows(_find, None)
+    try:
+        win32gui.EnumWindows(_find, None)
+    except Exception:
+        pass
     for hwnd in hwnds:
         rect = win32gui.GetWindowRect(hwnd)
         w, h = rect[2] - rect[0], rect[3] - rect[1]
@@ -756,11 +822,17 @@ def wait_then_close_forza(wait_minutes: int = 20):
     forza_hwnds = []
 
     def _find(hwnd, _):
-        title = win32gui.GetWindowText(hwnd)
-        if win32gui.IsWindowVisible(hwnd) and "forza" in title.lower() and "xbox" not in title.lower():
-            forza_hwnds.append(hwnd)
+        try:
+            title = win32gui.GetWindowText(hwnd)
+            if win32gui.IsWindowVisible(hwnd) and "forza" in title.lower() and "xbox" not in title.lower():
+                forza_hwnds.append(hwnd)
+        except Exception:
+            pass
 
-    win32gui.EnumWindows(_find, None)
+    try:
+        win32gui.EnumWindows(_find, None)
+    except Exception:
+        pass
 
     if not forza_hwnds:
         logger.warning("Forza window not found — may already be closed.")
@@ -819,11 +891,17 @@ def wait_for_world_map_and_close(initial_wait: int = 600, timeout: int = 600):
         forza_hwnds = []
 
         def _find(hwnd, _):
-            title = win32gui.GetWindowText(hwnd)
-            if win32gui.IsWindowVisible(hwnd) and "forza" in title.lower() and "xbox" not in title.lower():
-                forza_hwnds.append(hwnd)
+            try:
+                title = win32gui.GetWindowText(hwnd)
+                if win32gui.IsWindowVisible(hwnd) and "forza" in title.lower() and "xbox" not in title.lower():
+                    forza_hwnds.append(hwnd)
+            except Exception:
+                pass
 
-        win32gui.EnumWindows(_find, None)
+        try:
+            win32gui.EnumWindows(_find, None)
+        except Exception:
+            pass
 
         for hwnd in forza_hwnds:
             rect = win32gui.GetWindowRect(hwnd)
@@ -873,11 +951,17 @@ def press_escape_then_9(timeout: int = 120):
         forza_hwnds = []
 
         def _find(hwnd, _):
-            title = win32gui.GetWindowText(hwnd)
-            if win32gui.IsWindowVisible(hwnd) and "forza" in title.lower() and "xbox" not in title.lower():
-                forza_hwnds.append(hwnd)
+            try:
+                title = win32gui.GetWindowText(hwnd)
+                if win32gui.IsWindowVisible(hwnd) and "forza" in title.lower() and "xbox" not in title.lower():
+                    forza_hwnds.append(hwnd)
+            except Exception:
+                pass
 
-        win32gui.EnumWindows(_find, None)
+        try:
+            win32gui.EnumWindows(_find, None)
+        except Exception:
+            pass
 
         for hwnd in forza_hwnds:
             rect = win32gui.GetWindowRect(hwnd)
