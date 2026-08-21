@@ -420,8 +420,8 @@ def run_crypto_tool_steps():
         pyautogui.press("enter")
         logger.info("Pressed Enter fallback for 'Yes' on popup.")
 
-    logger.info("Waiting 10 seconds for save swap to complete...")
-    time.sleep(10)
+    logger.info("Waiting 40 seconds for save swap to complete...")
+    time.sleep(40)
 
     # Close ForzaCryptoTool
     logger.info("Closing ForzaCryptoTool...")
