@@ -342,6 +342,145 @@ def click_lets_go(timeout: int = 20):
     return False
 
 
+def _try_personalized_ads() -> bool:
+    """On 'Personalized ads' / 'Privacy' / 'Diagnostic data' page: select 'No thanks' or 'Only required data', then click 'Continue'."""
+    import win32gui, pyautogui
+    from pywinauto import Desktop
+
+    selected_no_thanks = False
+    target_hwnds = []
+
+    def _find_popups(hwnd, _):
+        try:
+            if win32gui.IsWindowVisible(hwnd):
+                r = win32gui.GetWindowRect(hwnd)
+                w, h = r[2] - r[0], r[3] - r[1]
+                t = win32gui.GetWindowText(hwnd).lower()
+                if (250 < w < 900 and 250 < h < 850) or any(k in t for k in ["personalized", "ads", "diagnostic", "privacy"]):
+                    target_hwnds.append(hwnd)
+        except Exception:
+            pass
+
+    try:
+        win32gui.EnumWindows(_find_popups, None)
+    except Exception:
+        pass
+
+    # Approach A: UIA search for radio button or text 'No thanks' / 'Only required data'
+    try:
+        desktop = Desktop(backend="uia")
+        for win in desktop.windows():
+            try:
+                t = win.window_text().strip().lower()
+                if any(k in t for k in ["xbox", "personalized", "ads", "privacy", "diagnostic", ""]):
+                    for ctrl in win.descendants():
+                        try:
+                            txt = ctrl.window_text().strip().lower()
+                            if any(k in txt for k in ["no thanks", "no, thanks", "ads won't be", "only required data", "required data only", "don't personalize"]):
+                                try:
+                                    ctrl.click_input()
+                                except Exception:
+                                    r = ctrl.rectangle()
+                                    pyautogui.click(r.mid_point().x, r.mid_point().y)
+                                logger.info(f"Selected 'No thanks' / option via UIA: '{ctrl.window_text().strip()}'")
+                                selected_no_thanks = True
+                                time.sleep(0.5)
+                                break
+                        except Exception:
+                            continue
+            except Exception:
+                continue
+            if selected_no_thanks:
+                break
+    except Exception:
+        pass
+
+    # Approach B: If popup modal window is open, click fallback 'No thanks' radio location
+    if not selected_no_thanks:
+        for hwnd in target_hwnds:
+            try:
+                rect = win32gui.GetWindowRect(hwnd)
+                w, h = rect[2] - rect[0], rect[3] - rect[1]
+                if 250 < w < 900 and 250 < h < 850:
+                    try:
+                        win32gui.SetForegroundWindow(hwnd)
+                    except Exception:
+                        pass
+                    time.sleep(0.2)
+                    # Coordinates for 'No thanks' radio button on MS account modal
+                    click_x = rect[0] + int(w * 0.35)
+                    click_y = rect[1] + int(h * 0.55)
+                    pyautogui.click(click_x, click_y)
+                    logger.info(f"Fallback click for 'No thanks' option at ({click_x}, {click_y}).")
+                    time.sleep(0.4)
+                    selected_no_thanks = True
+                    break
+            except Exception:
+                pass
+
+    if selected_no_thanks or target_hwnds:
+        time.sleep(0.4)
+        # 1. Try UIA Continue button search
+        try:
+            desktop = Desktop(backend="uia")
+            for win in desktop.windows():
+                try:
+                    for ctrl in win.descendants():
+                        try:
+                            txt = ctrl.window_text().strip().lower()
+                            if txt in ["continue", "next", "accept", "ok"]:
+                                ctrl.click_input()
+                                logger.info(f"Clicked Continue button: '{ctrl.window_text().strip()}'")
+                                time.sleep(0.5)
+                                return True
+                        except Exception:
+                            continue
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        # 2. Click Continue button via pixel scan or coordinate fallback
+        for hwnd in target_hwnds:
+            try:
+                rect = win32gui.GetWindowRect(hwnd)
+                w, h = rect[2] - rect[0], rect[3] - rect[1]
+                if 250 < w < 900 and 250 < h < 850:
+                    shot = pyautogui.screenshot(region=(rect[0], rect[1], w, h))
+                    px = shot.load()
+                    green_xs, green_ys = [], []
+                    for sy in range(int(h * 0.65), int(h * 0.90), 3):
+                        for sx in range(int(w * 0.35), int(w * 0.85), 3):
+                            r, g, b = px[sx, sy]
+                            if g > 100 and r < 70 and b < 70:
+                                green_xs.append(rect[0] + sx)
+                                green_ys.append(rect[1] + sy)
+                    if green_xs and green_ys:
+                        avg_x = sum(green_xs) // len(green_xs)
+                        avg_y = sum(green_ys) // len(green_ys)
+                        pyautogui.click(avg_x, avg_y)
+                        logger.info(f"Clicked Continue green button via pixel scan at ({avg_x}, {avg_y}).")
+                        time.sleep(0.5)
+                        return True
+
+                    cont_x = rect[0] + int(w * 0.70)
+                    cont_y = rect[1] + int(h * 0.72)
+                    pyautogui.click(cont_x, cont_y)
+                    logger.info(f"Fallback click Continue button at ({cont_x}, {cont_y}).")
+                    time.sleep(0.3)
+                    pyautogui.press("enter")
+                    return True
+            except Exception:
+                pass
+
+        if selected_no_thanks:
+            pyautogui.press("enter")
+            logger.info("Pressed Enter to complete Continue on ads page.")
+            return True
+
+    return False
+
+
 def _try_keep_current_settings() -> bool:
     """Detect and click 'Keep current settings' button if visible on screen via UIA or green pixel scan."""
     import win32gui, pyautogui
@@ -357,7 +496,7 @@ def _try_keep_current_settings() -> bool:
                     for ctrl in win.descendants():
                         try:
                             txt = ctrl.window_text().strip().lower()
-                            if "keep current" in txt:
+                            if "keep current" in txt or "keep using" in txt:
                                 try:
                                     ctrl.click_input()
                                 except Exception:
@@ -373,7 +512,7 @@ def _try_keep_current_settings() -> bool:
     except Exception:
         pass
 
-    # Approach B: Scan visible Xbox popup windows for green button on the left (Keep current settings)
+    # Approach B: Scan visible Xbox popup windows for green button on the left ONLY if it's not a personalized ads/diagnostic page
     xbox_hwnds = []
     def _find(hwnd, _):
         try:
@@ -382,7 +521,7 @@ def _try_keep_current_settings() -> bool:
                 if "xbox" in t or "confirm" in t or t == "":
                     r = win32gui.GetWindowRect(hwnd)
                     w, h = r[2] - r[0], r[3] - r[1]
-                    if w > 300 and h > 300:
+                    if 250 < w < 900 and 250 < h < 900:
                         xbox_hwnds.append(hwnd)
         except Exception:
             pass
@@ -394,6 +533,16 @@ def _try_keep_current_settings() -> bool:
 
     for hwnd in xbox_hwnds:
         try:
+            # Check if this popup is a personalized ads/diagnostic data window
+            try:
+                win_obj = Desktop(backend="uia").window(handle=hwnd)
+                texts = [ctrl.window_text().lower() for ctrl in win_obj.descendants()]
+                if any(any(k in txt for k in ["personalized", "no thanks", "diagnostic", "privacy", "only required"]) for txt in texts):
+                    # Do not treat as Keep Current Settings!
+                    continue
+            except Exception:
+                pass
+
             rect = win32gui.GetWindowRect(hwnd)
             w, h = rect[2] - rect[0], rect[3] - rect[1]
 
@@ -426,6 +575,27 @@ def _try_keep_current_settings() -> bool:
     return False
 
 
+def dismiss_all_post_login_popups(timeout: int = 10) -> bool:
+    """Check and handle any post-login popups ('No thanks' ads, Diagnostic data, Keep current settings, confirmation dialogs)."""
+    start = time.time()
+    handled_any = False
+
+    while time.time() - start < timeout:
+        res = (
+            _try_personalized_ads()
+            or _try_keep_current_settings()
+        )
+        if res:
+            handled_any = True
+            time.sleep(0.5)
+        else:
+            if handled_any or (time.time() - start >= 2):
+                break
+            time.sleep(0.5)
+
+    return handled_any
+
+
 def click_forza(timeout: int = 30):
     import pyautogui
     import win32gui
@@ -434,8 +604,8 @@ def click_forza(timeout: int = 30):
 
     start = time.time()
     while time.time() - start < timeout:
-        # Check and dismiss any 'Keep current settings' popup blocking Forza
-        _try_keep_current_settings()
+        # Dismiss any post-login popups ('No thanks', 'Keep current settings', etc.) blocking Forza
+        dismiss_all_post_login_popups(timeout=1)
         xbox_hwnds = []
 
         def _collect(hwnd, _):
@@ -505,7 +675,7 @@ def click_play(timeout: int = 30, popup_handler=None):
     start = time.time()
     while time.time() - start < timeout:
         # Check and handle any popups blocking Play
-        _try_keep_current_settings()
+        dismiss_all_post_login_popups(timeout=1)
         if popup_handler:
             try:
                 popup_handler()

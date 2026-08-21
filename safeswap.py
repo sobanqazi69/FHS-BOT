@@ -382,32 +382,112 @@ def _try_personalized_recommendations() -> bool:
 
 def _try_personalized_ads() -> bool:
     """On the 'Personalized ads' page: select No thanks then Continue."""
-    pairs = _all_texts()
-    page_visible = any("personalized ads" in txt.lower() for _, txt in pairs)
-    if not page_visible:
-        return False
-    # Click "No thanks" radio
-    for ctrl, txt in pairs:
-        if "no thanks" in txt.lower():
+    import win32gui, pyautogui, time
+    from pywinauto import Desktop
+
+    # Approach A: UIA search across all visible windows
+    found = False
+    try:
+        desktop = Desktop(backend="uia")
+        for win in desktop.windows():
             try:
-                ctrl.click_input()
-                logger.info("[post-login] Selected 'No thanks' (personalized ads).")
-                time.sleep(0.5)
+                t = win.window_text().strip().lower()
+                if any(k in t for k in ["xbox", "personalized ads", "ads", ""]):
+                    for ctrl in win.descendants():
+                        try:
+                            txt = ctrl.window_text().strip().lower()
+                            if "no thanks" in txt or "ads won't be" in txt:
+                                try:
+                                    ctrl.click_input()
+                                except Exception:
+                                    r = ctrl.rectangle()
+                                    pyautogui.click(r.mid_point().x, r.mid_point().y)
+                                logger.info("[post-login] Selected 'No thanks' (personalized ads).")
+                                found = True
+                                time.sleep(0.5)
+                                break
+                        except Exception:
+                            continue
+            except Exception:
+                continue
+            if found:
                 break
-            except Exception:
-                pass
-    # Click Continue
-    for ctrl, txt in pairs:
-        if txt.strip().lower() == "continue":
-            try:
-                ctrl.click_input()
-                logger.info("[post-login] Clicked Continue (ads page).")
-                return True
-            except Exception:
-                pass
-    _click_web_button(["Continue"], fallback_key="enter")
-    logger.info("[post-login] Clicked Continue (ads fallback).")
-    return True
+    except Exception:
+        pass
+
+    if found:
+        # Click Continue
+        time.sleep(0.5)
+        try:
+            desktop = Desktop(backend="uia")
+            for win in desktop.windows():
+                try:
+                    for ctrl in win.descendants():
+                        try:
+                            txt = ctrl.window_text().strip().lower()
+                            if txt == "continue":
+                                ctrl.click_input()
+                                logger.info("[post-login] Clicked Continue (ads page).")
+                                time.sleep(0.5)
+                                return True
+                        except Exception:
+                            continue
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        pyautogui.press("enter")
+        logger.info("[post-login] Pressed Enter for Continue (ads page).")
+        return True
+
+    # Approach B: Coordinate / Popup window scan fallback
+    xbox_hwnds = []
+    def _find(hwnd, _):
+        try:
+            if win32gui.IsWindowVisible(hwnd):
+                r = win32gui.GetWindowRect(hwnd)
+                w, h = r[2] - r[0], r[3] - r[1]
+                if 250 < w < 900 and 250 < h < 900:  # popup dialog window
+                    xbox_hwnds.append(hwnd)
+        except Exception:
+            pass
+
+    try:
+        win32gui.EnumWindows(_find, None)
+    except Exception:
+        pass
+
+    for hwnd in xbox_hwnds:
+        try:
+            rect = win32gui.GetWindowRect(hwnd)
+            w, h = rect[2] - rect[0], rect[3] - rect[1]
+
+            desktop = Desktop(backend="uia").window(handle=hwnd)
+            for ctrl in desktop.descendants():
+                try:
+                    txt = ctrl.window_text().strip().lower()
+                    if "personalized ads" in txt or "no thanks" in txt:
+                        # Click No thanks radio option
+                        click_x = rect[0] + int(w * 0.50)
+                        click_y = rect[1] + int(h * 0.55)
+                        pyautogui.click(click_x, click_y)
+                        logger.info(f"[post-login] Clicked 'No thanks' via coords ({click_x}, {click_y}).")
+                        time.sleep(0.5)
+
+                        # Click Continue button
+                        cont_x = rect[0] + int(w * 0.75)
+                        cont_y = rect[1] + int(h * 0.70)
+                        pyautogui.click(cont_x, cont_y)
+                        logger.info(f"[post-login] Clicked 'Continue' via coords ({cont_x}, {cont_y}).")
+                        pyautogui.press("enter")
+                        return True
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    return False
 
 
 def _capture_xbox_screenshot():

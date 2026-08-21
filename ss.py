@@ -12,6 +12,7 @@ from bot.modules.ui_controller import (
     select_account,
     close_signin_popups,
     dismiss_account_popup,
+    dismiss_all_post_login_popups,
     click_lets_go,
     click_forza,
     click_play,
@@ -504,20 +505,6 @@ def close_all_windows():
     time.sleep(2)
 
 
-def run_crypto_tool_steps():
-    """
-    1. Open folder 'C:\\Users\\pc\\Desktop\\FH6 SAFE SWAP'
-    2. Launch ForzaCryptoTool.exe and maximize
-    3. Click 'Save Swap' in left sidebar
-    4. Click 'Browse' (under Donor save)
-    5. Select file 'C:\\Users\\pc\\Desktop\\FH6 SAFE SWAP\\C_ProfileData'
-    6. Click 'Detect' button under Your account section
-    7. Click 'Swap save' button
-    8. Click 'Yes' on Confirm save swap popup
-    9. Wait 40 seconds and close all extra windows
-    """
-
-
 async def run():
     settings = Settings()
     cred_file = settings.get("credentials_file", "config/credentials.json")
@@ -575,6 +562,7 @@ async def run():
             time.sleep(3)
             continue
 
+        dismiss_all_post_login_popups(timeout=10)
         mark_account_blue(sheet, row_num)
         logger.info(f"Successfully signed in as {email}.")
 
@@ -604,6 +592,7 @@ async def run():
         logger.info("=== STEP 6: RE-OPEN XBOX & SECOND GAME LAUNCH ===")
         open_xbox()
         time.sleep(3)
+        dismiss_all_post_login_popups(timeout=10)
         click_forza(timeout=30)
         click_play(timeout=30)
         click_ignore(wait_seconds=5, timeout=30)
